@@ -15,9 +15,88 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r cars}
-summary(cars)
+## Librerias
+En este paso vamos a cargar las librerìas requeridas
+```{r librerias, message=FALSE,warning=F}
+library(stringr)
+library(dplyr)
+library(readr)
+library(mltools)
+library(data.table)
+library(ggplot2)
+library(caret)
 ```
+
+1. Descomprimir el fichero
+
+```{r cargar datos}
+
+epa_http <- read_table("C:/Users/juliota/Downloads/epa-http/epa-http.csv", 
+    col_names = FALSE, col_types = cols(`1497` = col_double(), 
+        X7 = col_double()))
+View(epa_http)
+
+```
+
+2. Descripción de los datos analizados
+Fuente de datos
+```{r cargar datos}
+
+summary(epa_http)
+```
+
+
+3. Limpieza de datos
+```{r Descripcion datos}
+
+# cambiamos nombres columnas
+colnames(epa_http) <- c("IP", "HORA", "METODO", "URL", "VERSION", "STATUS", "BYTES")
+epa_http$Metodo2 <- substr(epa_http$METODO, 2, nchar(epa_http$METODO))
+epa_http$Version2 <- substring(epa_http$VERSION, 1, nchar(epa_http$VERSION) - 1)
+View(epa_http)
+
+```
+
+
+#Clustering de datos
+
+
+```{r Pregunta 8}
+horas <- gsub("^.*:(\\d+):(\\d+):\\d+]$", "\\1", epa_http$HORA)
+horas_numericas <- as.numeric(horas)
+
+epa_http$BYTES <- replace(epa_http$BYTES, epa_http$BYTES = NULL, 0)
+
+
+epa_http$Metodo2 <- as.factor(epa_http$Metodo2)
+
+epa_http_one_hot <- one_hot(as.data.table(epa_http), sparsifyNAs = TRUE)
+epa_http_one_hot_num <- epa_http_one_hot[,8:10]
+
+
+
+set.seed(123)
+num_cluster <- 2
+resultado <- kmeans(epa_http_one_hot_num, centers = num_cluster, nstart = 25)
+resultado_no_na <- kmeans(na.omit(epa_http_one_hot_num), centers = num_cluster)
+
+num_cluster <- 3
+resultado <- kmeans(epa_http_one_hot_num, centers = num_cluster, nstart = 25)
+resultado_no_na <- kmeans(na.omit(epa_http_one_hot_num), centers = num_cluster)
+
+```
+
+
+```{r Pregunta 9}
+
+
+epa_http$cluster <- as.factor(resultado$cluster)
+
+ggplot(epa_http_one_hot_num, aes(x = Metodo2_GET, y = Metodo2_HEAD, color = factor(cluster))) + geom_point() + labs(x = "Metodo2_GET", Y = "Metodo2_HEAD", color = "Cluster") + theme_minimal()
+
+```
+
+
 
 ## Including Plots
 
