@@ -1,6 +1,6 @@
 ---
 title: "PRACTICA3"
-author: "NM"
+author: "Julio Takimoto, Jesús Carrasco, Nelson Marin"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -16,7 +16,9 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ## Librerias
+
 En este paso vamos a cargar las librerìas requeridas
+
 ```{r librerias, message=FALSE,warning=F}
 library(stringr)
 library(dplyr)
@@ -25,11 +27,15 @@ library(mltools)
 library(data.table)
 library(ggplot2)
 library(caret)
+library(lubridate)
+library(cluster)
+library(factoextra)
+
 ```
 
-1. Descomprimir el fichero
+1.  Descomprimir el fichero
 
-```{r cargar datos}
+```{r Fichero}
 
 epa_http <- read_table("C:/Users/juliota/Downloads/epa-http/epa-http.csv", 
     col_names = FALSE, col_types = cols(`1497` = col_double(), 
@@ -38,72 +44,178 @@ View(epa_http)
 
 ```
 
-2. Descripción de los datos analizados
-Fuente de datos
-```{r cargar datos}
+2.  Descripción de los datos analizados Fuente de datos
+
+```{r descripcion datos}
+
+colnames(epa_http) <- c("Request", "Tiempo", "Metodo", "Pagina", "Protocolo", "Status", "Tamano")
 
 summary(epa_http)
+
 ```
 
+3.  Limpieza de datos - Datos elegantes
 
-3. Limpieza de datos
-```{r Descripcion datos}
+```{r datos elegantes}
 
-# cambiamos nombres columnas
-colnames(epa_http) <- c("IP", "HORA", "METODO", "URL", "VERSION", "STATUS", "BYTES")
-epa_http$Metodo2 <- substr(epa_http$METODO, 2, nchar(epa_http$METODO))
-epa_http$Version2 <- substring(epa_http$VERSION, 1, nchar(epa_http$VERSION) - 1)
+epa_http <- epa_http %>%
+  mutate(
+    Metodo = gsub('"', '', Metodo),
+    Pagina = gsub('"', '', Pagina),
+    Protocolo = gsub('"', '', Protocolo),
+    Tamano = as.numeric(Tamano)
+  ) 
+
+#Datos de horas en nueva columna
+epa_http <- epa_http %>%
+  mutate(
+    Hora = as.numeric(gsub("^.*:(\\d+):(\\d+):\\d+\\]$", "\\1", Tiempo))  
+      )
+
 View(epa_http)
 
 ```
 
+4.Numero unico de usuarios
 
-#Clustering de datos
+```{r Numero usuarios}
 
+error_epa_http <- epa_http %>%
+  filter(Status >= 400)
 
-```{r Pregunta 8}
-horas <- gsub("^.*:(\\d+):(\\d+):\\d+]$", "\\1", epa_http$HORA)
-horas_numericas <- as.numeric(horas)
+#Cantidad de Usuarios que han tenido un error
+unique_users_error <- length(unique(error_epa_http$Request))
 
-epa_http$BYTES <- replace(epa_http$BYTES, epa_http$BYTES = NULL, 0)
+#Cantidad de Usuarios que no han tenido ningún tipo de error
+unique_users_no_error <- length(unique(epa_http$Request)) - unique_users_error
 
-
-epa_http$Metodo2 <- as.factor(epa_http$Metodo2)
-
-epa_http_one_hot <- one_hot(as.data.table(epa_http), sparsifyNAs = TRUE)
-epa_http_one_hot_num <- epa_http_one_hot[,8:10]
-
-
-
-set.seed(123)
-num_cluster <- 2
-resultado <- kmeans(epa_http_one_hot_num, centers = num_cluster, nstart = 25)
-resultado_no_na <- kmeans(na.omit(epa_http_one_hot_num), centers = num_cluster)
-
-num_cluster <- 3
-resultado <- kmeans(epa_http_one_hot_num, centers = num_cluster, nstart = 25)
-resultado_no_na <- kmeans(na.omit(epa_http_one_hot_num), centers = num_cluster)
+# Cantidad por Tipos de errores
+error_summary <- error_epa_http %>%
+  group_by(Status) %>%
+  summarise(UniqueUsers = n_distinct(Request))
+ print(error_summary)
 
 ```
 
+5.  Tipos de peticiones
 
-```{r Pregunta 9}
+```{r Peticiones}
+#Peticiones HTTP agrupadas
+http_metodo <- epa_http %>%
+  group_by(Metodo) %>%
+  summarise(Frequency = n())
 
+print(http_metodo)
 
-epa_http$cluster <- as.factor(resultado$cluster)
+# Peticiones de imágenes
+imagen_request <- epa_http %>%
+  filter(grepl("\\.(jpg|jpeg|png|gif|bmp|html)$", Pagina)) %>%
+  group_by(Metodo) %>%
+  summarise(Frequency = n())
 
-ggplot(epa_http_one_hot_num, aes(x = Metodo2_GET, y = Metodo2_HEAD, color = factor(cluster))) + geom_point() + labs(x = "Metodo2_GET", Y = "Metodo2_HEAD", color = "Cluster") + theme_minimal()
+print(imagen_request)
 
 ```
 
+6.  Graficos
 
+```{r Graficos de resultados}
+# 1 - Gráfico: Cantidad de metodos HTTP
+#El gráfico muestra la cantidad de usuarios por cada metodo (GET, HEAD, POST)
+grafico1 <- ggplot(http_metodo, aes(x = Metodo, y = Frequency)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  theme_minimal() +
+  ggtitle("Cantidad de Métodos HTTP")
+
+print(grafico1)
+
+# 2- Grafico: Cantidad de Usuarios por tipo de error
+#El gráfico muestra la cantidad de usuarios por cada código de error
+grafico2 <- ggplot(error_summary, aes(x = Status, y = UniqueUsers)) +
+  geom_bar(stat = "identity", fill = "blue", color = "black") + 
+  theme_minimal() +
+  ggtitle("Cantidad de Usuarios por Tipo de Error")
+
+print(grafico2)
+
+```
+
+7.  Grafico número de peticiones
+
+```{r Numero de peticiones}
+
+tiempo_serie <- epa_http %>%
+  group_by(Hora) %>%
+  summarise(Requests = n())
+ 
+
+grafico2 <- ggplot(tiempo_serie, aes(x = Hora, y = Requests)) +
+  geom_line() +
+  theme_minimal() +
+  ggtitle("Número de Peticiones por Tiempo")
+
+
+print(grafico2)
+
+```
+
+8.  Análisis de Clustering
+
+```{r Algoritmo de aprendizaje no supervisado}
+# Añadir longitud de la URL como característica numérica
+epa_http <- epa_http %>% mutate(URL_Long = nchar(Pagina))
+
+# Eliminar filas con NA
+epa_http <- na.omit(epa_http)
+
+#Normalizar el tamaño de la solicitud
+
+epa_http$SizeNorma <- scale(epa_http$Tamano, center = FALSE)
+View(epa_http)
+
+# Convertir factores a variables numéricas
+epa_http_one_hot <- one_hot(as.data.table(epa_http[, c("Status", "SizeNorma", "Hora", "URL_Long"), drop = FALSE]), sparsifyNAs = TRUE)
+View(epa_http_one_hot)
+
+
+# K-means clustering
+set.seed(1234)
+k2 <- kmeans(epa_http_one_hot, centers = 2, nstart = 25)
+k3 <- kmeans(epa_http_one_hot, centers = 3, nstart = 25)
+epa_http$cluster2 <- as.factor(k2$cluster)
+epa_http$cluster3 <- as.factor(k3$cluster)
+
+View(epa_http)
+
+```
+
+9.  Representación visual
+
+```{r Representacion visual}
+
+# Crear el data frame con los centros de los clusters
+centers <- as.data.frame(k2$centers)
+centers$cluster <- as.factor(1:nrow(centers))
+
+# Ver la estructura del data frame `epa_http`
+str(epa_http)
+
+# Asegúrate de que la variable `cluster2` sea un factor
+epa_http$cluster2 <- as.factor(epa_http$cluster2)
+
+ggplot(data = epa_http) +
+  geom_point(aes(x = Metodo, y = Status, color = cluster2), size = 2) +
+  scale_color_discrete() +  # Usar una escala discreta para los clusters
+  geom_point(data = centers, aes(x = k2$centers[, 1], y = k2$centers[, 2]), color = 'black', size = 3) +
+  ggtitle('Clusters de Datos con k = 2 / K-Medios') + 
+  xlab('Metodo') + 
+  ylab('Status')
+
+
+```
 
 ## Including Plots
 
-You can also embed plots, for example:
+#You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+#Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
